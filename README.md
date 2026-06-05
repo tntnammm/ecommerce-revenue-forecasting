@@ -291,7 +291,7 @@ ecommerce-revenue-forecasting
 
 ### Tran Nguyen Thanh Nam
 
-Aspiring Data Scientist
+Data Science Student
 
 📌 Time Series Forecasting
 
