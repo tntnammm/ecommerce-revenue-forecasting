@@ -1,260 +1,141 @@
-<div align="center">
+# E-commerce Revenue Forecasting using ARIMA and LSTM
 
-# 📈 E-Commerce Revenue Forecasting
-### ARIMA vs LSTM for Time Series Forecasting
+## Overview
 
-Forecasting future e-commerce revenue using statistical modeling and deep learning.
-
-![R](https://img.shields.io/badge/R-276DC3?style=for-the-badge&logo=r&logoColor=white)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
-![Keras](https://img.shields.io/badge/Keras-D00000?style=for-the-badge&logo=keras&logoColor=white)
-![Forecasting](https://img.shields.io/badge/Time%20Series-Forecasting-success?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Completed-brightgreen?style=for-the-badge)
-
-</div>
-
----
-
-# 🎯 Business Problem
-
-E-commerce businesses must accurately forecast future revenue to support:
-
-📦 Inventory Planning
-
-💰 Marketing Budget Allocation
-
-📊 Sales Target Setting
-
-🚚 Operational Resource Planning
+Forecasting future revenue is a critical task for e-commerce businesses. Accurate forecasts support inventory planning, marketing budget allocation, demand management, and strategic decision-making.
 
 This project develops and compares two forecasting approaches:
 
-| Model | Type |
-|---------|---------|
-| ARIMA | Statistical Forecasting |
-| LSTM | Deep Learning Forecasting |
+* **ARIMA (AutoRegressive Integrated Moving Average)** – a traditional statistical time-series model.
+* **LSTM (Long Short-Term Memory)** – a deep learning model designed for sequential data.
+
+Using the UCI Online Retail dataset containing over **500,000 transaction records**, this project builds an end-to-end forecasting pipeline from raw transaction data to future revenue prediction.
 
 ---
 
-# 🏗 Project Pipeline
+## Business Problem
+
+E-commerce companies often experience fluctuations in revenue due to seasonality, promotions, customer behavior, and market trends.
+
+The objective of this project is to answer:
+
+> Can historical transaction data be used to accurately forecast future weekly revenue?
+
+The resulting forecasts can support:
+
+* Inventory planning
+* Marketing budget allocation
+* Operational resource planning
+* Revenue target estimation
+
+---
+
+## Dataset
+
+**Source:** UCI Machine Learning Repository
+
+Dataset: Online Retail
+
+Characteristics:
+
+* ~541,000 transaction records
+* United Kingdom-based online retailer
+* Period: December 2010 – December 2011
+* Features include:
+
+  * Invoice Number
+  * Product Description
+  * Quantity
+  * Invoice Date
+  * Unit Price
+  * Customer ID
+  * Country
+
+Revenue is calculated as:
+
+Revenue = Quantity × UnitPrice
+
+---
+
+## Project Workflow
+
+### 1. Data Cleaning
+
+* Removed cancelled transactions
+* Removed negative quantities
+* Removed invalid prices
+* Parsed transaction timestamps
+* Generated revenue feature
+
+### 2. Time Series Aggregation
+
+Revenue was aggregated into:
+
+* Weekly revenue series
+* Monthly revenue series
+
+### 3. Exploratory Data Analysis (EDA)
+
+Performed:
+
+* Trend analysis
+* Revenue distribution analysis
+* Weekly and monthly revenue visualization
+* LOESS trend smoothing
+
+### 4. Stationarity Testing
+
+Applied:
+
+* Augmented Dickey-Fuller (ADF) Test
+* Differencing transformation
+* ACF/PACF diagnostics
+
+### 5. ARIMA Modeling
+
+Steps:
+
+* Grid Search for optimal (p,d,q)
+* AIC-based model selection
+* Residual diagnostics
+* Ljung-Box white-noise testing
+
+### 6. LSTM Modeling
+
+Deep learning workflow:
+
+* Min-Max normalization
+* Sequence generation
+* Multi-layer LSTM architecture
+* Dropout regularization
+* Forecast generation
+
+### 7. Model Evaluation
+
+Models were compared using:
+
+* MAE (Mean Absolute Error)
+* RMSE (Root Mean Squared Error)
+* MAPE (Mean Absolute Percentage Error)
+
+### 8. Future Revenue Forecasting
+
+Generated revenue forecasts for the next 8 weeks using both ARIMA and LSTM models.
+
+---
+
+## Repository Structure
 
 ```text
-Raw Transactions
-       │
-       ▼
-Data Cleaning
-       │
-       ▼
-Revenue Calculation
-       │
-       ▼
-Weekly Aggregation
-       │
-       ▼
-Exploratory Data Analysis
-       │
-       ▼
-Stationarity Testing
-       │
-       ▼
- ┌──────────────┐
- │    ARIMA     │
- └──────────────┘
-       │
-       ▼
- ┌──────────────┐
- │     LSTM     │
- └──────────────┘
-       │
-       ▼
-Model Evaluation
-       │
-       ▼
-8-Week Revenue Forecast
-```
-
----
-
-# 📂 Dataset
-
-### UCI Online Retail Dataset
-
-| Attribute | Value |
-|------------|------------|
-| Transactions | 541,909 |
-| Customers | 4,000+ |
-| Period | Dec 2010 – Dec 2011 |
-| Country | United Kingdom |
-| Granularity | Transaction-Level |
-
-Revenue formula:
-
-```math
-Revenue = Quantity \times UnitPrice
-```
-
----
-
-# 🔍 Exploratory Data Analysis
-
-### Weekly Revenue Trend
-
-<p align="center">
-<img src="images/revenue_trend.png" width="800">
-</p>
-
----
-
-### Monthly Revenue Analysis
-
-<p align="center">
-<img src="images/monthly_revenue.png" width="800">
-</p>
-
----
-
-# 📉 Stationarity Analysis
-
-Before building ARIMA:
-
-✅ Augmented Dickey-Fuller Test
-
-✅ Differencing
-
-✅ ACF Analysis
-
-✅ PACF Analysis
-
-<p align="center">
-<img src="images/stationarity_check.png" width="900">
-</p>
-
----
-
-# 🤖 Model Development
-
-## ARIMA
-
-### Workflow
-
-- Grid Search
-- AIC Optimization
-- Residual Diagnostics
-- Ljung-Box Testing
-
-Forecast:
-
-<p align="center">
-<img src="images/arima_forecast.png" width="800">
-</p>
-
----
-
-## LSTM
-
-### Architecture
-
-```text
-Input Sequence
-      │
-      ▼
-LSTM (64 units)
-      │
- Dropout 0.2
-      │
-      ▼
-LSTM (32 units)
-      │
- Dropout 0.2
-      │
-      ▼
-Dense Layer
-      │
-      ▼
-Revenue Forecast
-```
-
-Learning Curve:
-
-<p align="center">
-<img src="images/lstm_learning_curve.png" width="800">
-</p>
-
----
-
-# ⚔️ Model Comparison
-
-<p align="center">
-<img src="images/model_comparison.png" width="900">
-</p>
-
-| Model | MAE | RMSE | MAPE |
-|---------|---------:|---------:|---------:|
-| ARIMA(2,1,2) | 63,914 | 76,347 | 154.96% |
-| LSTM | 72,806 | 80,964 | 154.83% |
-
-# Key Findings
-
-- ARIMA achieved lower MAE and RMSE than LSTM.
-- LSTM produced a slightly lower MAPE.
-- Both models faced challenges due to the high volatility and limited length of the historical revenue series.
-- ARIMA demonstrated stronger performance for this dataset despite its simpler statistical structure.
-
----
-
-# 🔮 Revenue Forecast
-
-Forecast horizon:
-
-### Next 8 Weeks
-
-<p align="center">
-<img src="images/forecast_8weeks.png" width="900">
-</p>
-
----
-
-# 🛠 Technologies
-
-### Data Processing
-
-- readr
-- dplyr
-- lubridate
-
-### Visualization
-
-- ggplot2
-- gridExtra
-
-### Time Series
-
-- forecast
-- tseries
-
-### Deep Learning
-
-- TensorFlow
-- Keras
-
-### Reporting
-
-- R Markdown
-
----
-
-# 📁 Repository Structure
-
-```text
-ecommerce-revenue-forecasting
+ecommerce-revenue-forecasting/
 │
-├── data
+├── data/
 │   └── online_retail.csv
 │
-├── notebooks
+├── notebooks/
 │   └── ecommerce_timeseries.Rmd
 │
-├── images
+├── images/
 │   ├── revenue_trend.png
 │   ├── monthly_revenue.png
 │   ├── stationarity_check.png
@@ -263,7 +144,7 @@ ecommerce-revenue-forecasting
 │   ├── model_comparison.png
 │   └── forecast_8weeks.png
 │
-├── reports
+├── reports/
 │   └── Ecommerce_Revenue_Forecasting.html
 │
 ├── README.md
@@ -273,35 +154,122 @@ ecommerce-revenue-forecasting
 
 ---
 
-# 💡 Key Takeaways
+## Technologies
 
-✅ Built an end-to-end forecasting pipeline
+### Programming
 
-✅ Compared statistical and deep learning approaches
+* R
 
-✅ Applied stationarity testing and model diagnostics
+### Data Processing
 
-✅ Generated actionable business forecasts
+* dplyr
+* readr
+* lubridate
 
-✅ Automated report generation and visualization export
+### Visualization
+
+* ggplot2
+* gridExtra
+
+### Time Series Analysis
+
+* forecast
+* tseries
+
+### Deep Learning
+
+* keras
+* TensorFlow
+
+### Reporting
+
+* R Markdown
 
 ---
 
-# 👨‍💻 Author
+## Key Visualizations
 
-### Tran Nguyen Thanh Nam
+### Revenue Trend Analysis
 
-Data Science Student
+![Revenue Trend](images/revenue_trend.png)
 
-📌 Time Series Forecasting
+### Stationarity Diagnostics
 
-📌 Machine Learning
+![Stationarity](images/stationarity_check.png)
 
-📌 Deep Learning
+### ARIMA Forecast
 
-📌 Business Analytics
+![ARIMA Forecast](images/arima_forecast.png)
 
-🔗 GitHub: https://github.com/tntnammm
+### Model Comparison
+
+![Model Comparison](images/model_comparison.png)
+
+### Revenue Forecast
+
+![Forecast](images/forecast_8weeks.png)
 
 ---
-⭐ If you find this project interesting, feel free to star the repository.
+
+## Results
+
+The project evaluates both statistical and deep learning forecasting approaches and highlights their strengths and limitations in modeling e-commerce revenue dynamics.
+
+Performance metrics include:
+
+| Model | MAE | RMSE | MAPE |
+|---------|---------:|---------:|---------:|
+| ARIMA(2,1,2) | 63,914 | 76,347 | 154.96% |
+| LSTM | 72,806 | 80,964 | 154.83% |
+
+## Key Findings
+
+- ARIMA achieved lower MAE and RMSE than LSTM.
+- LSTM produced a slightly lower MAPE.
+- Both models faced challenges due to the high volatility and limited length of the historical revenue series.
+- ARIMA demonstrated stronger performance for this dataset despite its simpler statistical structure.
+
+---
+
+## Business Impact
+
+This forecasting framework can be applied to:
+
+* Revenue planning
+* Inventory management
+* Demand forecasting
+* Marketing campaign budgeting
+* Strategic decision-making
+
+By leveraging historical transaction data, organizations can proactively prepare for future demand fluctuations and optimize operational resources.
+
+---
+
+## Future Improvements
+
+Potential extensions include:
+
+* Facebook Prophet
+* XGBoost Forecasting
+* External Economic Indicators
+* Holiday Effects
+* Hyperparameter Optimization
+* Interactive Shiny Dashboard Deployment
+* Cloud-based Model Serving
+
+---
+
+## Author
+
+**Tran Nguyen Thanh Nam**
+
+Data Science Student with interests in:
+
+* Machine Learning
+* Deep Learning
+* Time Series Forecasting
+* Business Analytics
+* Data Visualization
+
+GitHub:
+https://github.com/tntnammm
