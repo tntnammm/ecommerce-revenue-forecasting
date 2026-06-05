@@ -1,0 +1,16 @@
+.Rhistory
+.RData
+.Rproj.user/
+
+*.log
+*.aux
+*.out
+*.toc
+
+reports/*.pdf
+
+renv/library/
+
+__pycache__/
+
+.DS_Store

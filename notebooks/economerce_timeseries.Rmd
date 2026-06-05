@@ -1,0 +1,613 @@
+---
+title: "E-commerce Revenue Forecasting using ARIMA and LSTM"
+author: "Tran Nguyen Thanh Nam"
+date: "`r Sys.Date()`"
+
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: cosmo
+    code_folding: hide
+---
+
+```{r}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 10,
+  fig.height = 6
+)
+```
+
+# Business Understanding
+
+Accurate revenue forecasting is critical for inventory planning, marketing budget allocation, and operational decision-making in e-commerce businesses.
+
+This project analyzes the UCI Online Retail dataset and compares a statistical forecasting approach (ARIMA) with a deep learning approach (LSTM) for predicting future revenue trends.
+
+# Project Objectives
+
+- Clean and transform transaction-level data.
+- Aggregate revenue into weekly_revenue and monthly_revenue time series.
+- Explore trends and seasonality patterns.
+- Develop ARIMA and LSTM forecasting models.
+- Compare forecasting performance using MAE, RMSE, and MAPE.
+- Generate revenue forecasts for the next 8 weeks.
+
+0. Cài đặt & nạp thư viện
+```{r}
+pkgs <- c("readr", "dplyr", "lubridate", "ggplot2", "forecast",
+          "tseries", "MASS", "keras", "zoo", "gridExtra")
+new_pkgs <- pkgs[!pkgs %in% installed.packages()[,"Package"]]
+if (length(new_pkgs)) install.packages(new_pkgs)
+
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(MASS)
+library(keras)
+library(zoo)
+library(gridExtra)
+
+dir.create("../images", showWarnings = FALSE)
+dir.create("../reports", showWarnings = FALSE)
+```
+
+BƯỚC 1: NẠP & TIỀN XỬ LÝ DỮ LIỆU
+```{r}
+
+retail_data <- read_csv(
+  "../data/online_retail.csv",
+  locale = locale(encoding = "latin1")
+)
+
+# Làm sạch
+retail_data <- retail_data %>%
+  mutate(
+    InvoiceDate = parse_date_time(InvoiceDate, orders = c("dmy HM", "ymd HM")),
+    Revenue     = Quantity * UnitPrice
+  ) %>%
+  filter(Quantity > 0, UnitPrice > 0, !is.na(InvoiceDate))
+
+cat("Dữ liệu sau làm sạch:", nrow(retail_data), "dòng\n")
+cat("Khoảng thời gian:", format(min(retail_data$InvoiceDate)), "→", format(max(retail_data$InvoiceDate)), "\n")
+cat("Tổng doanh thu: £", formatC(sum(retail_data$Revenue), format="f", digits=0, big.mark=","), "\n\n")
+
+# ── Chuỗi doanh thu theo tuần ─────────────────────────────────
+weekly_revenue <- retail_data %>%
+  mutate(Week = floor_date(InvoiceDate, unit = "week")) %>%
+  group_by(Week) %>%
+  summarise(Revenue = sum(Revenue), .groups = "drop") %>%
+  arrange(Week)
+
+# ── Chuỗi doanh thu theo tháng ───────────────────────────────
+monthly_revenue <- retail_data %>%
+  mutate(Month = floor_date(InvoiceDate, unit = "month")) %>%
+  group_by(Month) %>%
+  summarise(Revenue = sum(Revenue), .groups = "drop") %>%
+  arrange(Month)
+
+cat("Số tuần:", nrow(weekly_revenue), "| Số tháng:", nrow(monthly_revenue), "\n\n")
+```
+BƯỚC 2: PHÂN TÍCH KHÁM PHÁ (EDA)
+```{r}
+# Vẽ chuỗi doanh thu tuần
+p1 <- ggplot(weekly_revenue, aes(x = Week, y = Revenue)) +
+  geom_line(color = "#378ADD", linewidth = 0.8) +
+  geom_point(color = "#378ADD", size = 1.5, alpha = 0.7) +
+  geom_smooth(method = "loess", se = FALSE, color = "#D85A30",
+              linewidth = 0.8, linetype = "dashed") +
+  scale_y_continuous(labels = scales::comma_format(prefix = "£")) +
+  labs(title = "Doanh thu tuần – Online Retail",
+       subtitle = "Đường đỏ: xu hướng LOESS",
+       x = NULL, y = "Doanh thu (GBP)") +
+  theme_minimal(base_size = 12)
+
+# Vẽ doanh thu tháng
+p2 <- ggplot(monthly_revenue, aes(x = Month, y = Revenue)) +
+  geom_col(fill = "#378ADD", alpha = 0.8) +
+  geom_smooth(method = "loess", se = FALSE, color = "#D85A30",
+              linewidth = 0.8, linetype = "dashed") +
+  scale_y_continuous(labels = scales::comma_format(prefix = "£")) +
+  labs(title = "Doanh thu tháng",
+       subtitle = "Đường đỏ: xu hướng LOESS",
+       x = NULL, y = "Doanh thu (GBP)") +
+  theme_minimal(base_size = 12)
+
+grid.arrange(p1, p2, ncol = 1)
+ggsave(
+  "../images/revenue_trend.png",
+  plot = p1,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+ggsave(
+  "../images/monthly_revenue.png",
+  plot = p2,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+```
+BƯỚC 3: CHUẨN BỊ CHUỖI THỜI GIAN
+```{r}
+weekly_ts <- ts(weekly_revenue$Revenue, frequency = 52)
+
+cat("=== KIỂM ĐỊNH ADF ===\n")
+
+# ADF cho chuỗi gốc
+adf_orig <- adf.test(weekly_ts)
+
+cat(
+  "Chuỗi gốc: ADF =",
+  round(adf_orig$statistic, 4),
+  "| p-value =",
+  round(adf_orig$p.value, 4),
+  ifelse(
+    adf_orig$p.value > 0.05,
+    "→ NON-STATIONARY\n",
+    "→ STATIONARY\n"
+  )
+)
+
+# Sai phân bậc 1
+ts_diff <- diff(weekly_ts)
+
+adf_diff <- adf.test(ts_diff)
+
+cat(
+  "Sau sai phân d=1: ADF =",
+  round(adf_diff$statistic, 4),
+  "| p-value =",
+  round(adf_diff$p.value, 4),
+  ifelse(
+    adf_diff$p.value < 0.05,
+    "→ STATIONARY ✓\n\n",
+    "→ CẦN DIFF THÊM\n\n"
+  )
+)
+
+# ACF & PACF
+png(
+  "../images/stationarity_check.png",
+  width = 1200,
+  height = 1000
+)
+
+par(mfrow = c(2,2))
+
+acf(
+  weekly_ts,
+  lag.max = 30,
+  main = "ACF - Original Series"
+)
+
+pacf(
+  weekly_ts,
+  lag.max = 30,
+  main = "PACF - Original Series"
+)
+
+acf(
+  ts_diff,
+  lag.max = 30,
+  main = "ACF - Differenced Series"
+)
+
+pacf(
+  ts_diff,
+  lag.max = 30,
+  main = "PACF - Differenced Series"
+)
+
+par(mfrow = c(1,1))
+
+dev.off()
+```
+BƯỚC 4: MÔ HÌNH ARIMA
+```{r}
+cat("FIT MÔ HÌNH ARIMA\n")
+
+# 4a. Grid search AIC tốt nhất
+best_aic   <- Inf
+best_order <- c(1, 1, 1)
+
+for (p in 0:3) {
+  for (d in 0:1) {
+    for (q in 0:3) {
+      tryCatch({
+        m   <- Arima(weekly_ts, order = c(p, d, q))
+        if (m$aic < best_aic) {
+          best_aic   <- m$aic
+          best_order <- c(p, d, q)
+        }
+      }, error = function(e) NULL)
+    }
+  }
+}
+
+cat("Mô hình ARIMA tốt nhất: ARIMA(",
+    paste(best_order, collapse = ","), ")  AIC =", round(best_aic, 2), "\n")
+
+# 4b. Fit mô hình tốt nhất
+model_arima <- Arima(weekly_ts, order = best_order)
+print(summary(model_arima))
+
+# 4c. Kiểm tra phần dư
+cat("\n--- Phân tích phần dư ARIMA ---\n")
+checkresiduals(model_arima)
+
+# Ljung-Box
+lb <- Box.test(resid(model_arima), lag = 20, type = "Ljung-Box")
+cat("Ljung-Box p-value:", round(lb$p.value, 4),
+    ifelse(lb$p.value > 0.05,
+           "→ Phần dư là white noise ✓\n\n",
+           "→ Còn tự tương quan trong phần dư\n\n"))
+
+# 4d. Độ chính xác trên tập test (80/20) 
+n_test    <- floor(length(weekly_ts) * 0.2)
+ts_train  <- head(weekly_ts, length(weekly_ts) - n_test)
+ts_test   <- tail(weekly_ts, n_test)
+
+arima_fit  <- Arima(ts_train, order = best_order)
+arima_pred <- forecast(arima_fit, h = n_test)$mean
+
+arima_mae  <- mean(abs(ts_test - arima_pred))
+arima_rmse <- sqrt(mean((ts_test - arima_pred)^2))
+arima_mape <- mean(abs((ts_test - arima_pred) / ts_test)) * 100
+
+cat("=== ĐỘ CHÍNH XÁC ARIMA (test set) ===\n")
+cat("MAE  =", formatC(arima_mae,  format = "f", digits = 0, big.mark = ","), "\n")
+cat("RMSE =", formatC(arima_rmse, format = "f", digits = 0, big.mark = ","), "\n")
+cat("MAPE =", round(arima_mape, 2), "%\n\n")
+
+# 4e. Dự báo 8 tuần tới
+arima_full <- Arima(weekly_ts, order = best_order)
+arima_fc   <- forecast(arima_full, h = 8)
+
+p_arima <- autoplot(arima_fc) +
+  scale_y_continuous(
+    labels = scales::comma_format(prefix = "£")
+  ) +
+  labs(
+    title = paste0(
+      "Forecast ARIMA(",
+      paste(best_order, collapse = ","),
+      ")"
+    )
+  ) +
+  theme_minimal()
+
+p_arima
+
+ggsave(
+  "../images/arima_forecast.png",
+  plot = p_arima,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+```
+BƯỚC 5: MÔ HÌNH LSTM (keras)
+```{r}
+weekly_ts <- ts(weekly_revenue$Revenue, frequency = 52)
+cat("FIT MÔ HÌNH LSTM\n")
+
+library(keras)
+library(magrittr)
+
+# 5a. Chuẩn hoá MinMax 
+ts_vals  <- as.numeric(weekly_ts)
+ts_min   <- min(ts_vals)
+ts_max   <- max(ts_vals)
+ts_scale <- (ts_vals - ts_min) / (ts_max - ts_min)
+
+# 5b. Tạo sequences 
+LOOK_BACK <- 8
+
+make_sequences <- function(data, lb) {
+  n <- length(data) - lb
+  X <- matrix(0, nrow = n, ncol = lb)
+  y <- numeric(n)
+  for (i in seq_len(n)) {
+    X[i, ] <- data[i:(i + lb - 1)]
+    y[i]   <- data[i + lb]
+  }
+  list(X = X, y = y)
+}
+
+seqs    <- make_sequences(ts_scale, LOOK_BACK)
+X_all   <- seqs$X
+y_all   <- seqs$y
+split_i <- floor(nrow(X_all) * 0.8)
+
+X_train <- array(X_all[1:split_i, ], 
+                 dim = c(split_i, LOOK_BACK, 1))
+y_train <- y_all[1:split_i]
+
+X_test  <- array(X_all[(split_i+1):nrow(X_all), ], 
+                 dim = c(nrow(X_all) - split_i, LOOK_BACK, 1))
+y_test  <- y_all[(split_i+1):length(y_all)]
+
+# 5c. Xây dựng & huấn luyện mô hình
+set.seed(42)
+
+model_lstm <- keras_model_sequential() %>%
+  layer_lstm(units = 64, return_sequences = TRUE,
+             input_shape = c(LOOK_BACK, 1)) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_lstm(units = 32) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 1)
+
+model_lstm %>% compile(
+  optimizer = optimizer_adam(),
+  loss      = "mean_squared_error"
+)
+
+summary(model_lstm)
+
+history <- model_lstm %>% fit(
+  X_train, y_train,
+  epochs          = 50,   # giảm để chạy nhẹ hơn
+  batch_size      = 4,
+  validation_data = list(X_test, y_test),
+  verbose         = 1
+)
+
+# Vẽ learning curve
+png(
+  "../images/lstm_learning_curve.png",
+  width = 1200,
+  height = 800
+)
+
+plot(history)
+
+dev.off()
+
+plot(history)
+
+# 5d. Đánh giá trên tập test 
+lstm_pred_scale <- model_lstm %>% predict(X_test) %>% as.vector()
+
+lstm_pred   <- lstm_pred_scale * (ts_max - ts_min) + ts_min
+lstm_actual <- y_test          * (ts_max - ts_min) + ts_min
+
+lstm_mae  <- mean(abs(lstm_actual - lstm_pred))
+lstm_rmse <- sqrt(mean((lstm_actual - lstm_pred)^2))
+lstm_mape <- mean(abs((lstm_actual - lstm_pred) / lstm_actual)) * 100
+
+cat("=== ĐỘ CHÍNH XÁC LSTM (test set) ===\n")
+cat("MAE  =", formatC(lstm_mae,  format = "f", digits = 0, big.mark = ","), "\n")
+cat("RMSE =", formatC(lstm_rmse, format = "f", digits = 0, big.mark = ","), "\n")
+cat("MAPE =", round(lstm_mape, 2), "%\n\n")
+
+# 5e. Dự báo 8 tuần tới
+seq_fc      <- tail(ts_scale, LOOK_BACK)
+lstm_future <- numeric(8)
+
+for (i in 1:8) {
+  x_in           <- array(seq_fc, dim = c(1, LOOK_BACK, 1))
+  p              <- model_lstm %>% predict(x_in) %>% as.numeric()
+  lstm_future[i] <- p
+  seq_fc         <- c(seq_fc[-1], p)
+}
+
+lstm_fc <- lstm_future * (ts_max - ts_min) + ts_min
+
+cat("Dự báo 8 tuần tới (GBP):\n")
+print(round(lstm_fc, 0))
+```
+BƯỚC 6: SO SÁNH & VISUALISE
+```{r}
+cat("=== SO SÁNH MÔ HÌNH ===\n")
+cat(sprintf("%-10s  MAE=%s   RMSE=%s   MAPE=%.2f%%\n",
+            paste0("ARIMA(", paste(best_order, collapse=","), ")"),
+            formatC(arima_mae,  format="f", digits=0, big.mark=","),
+            formatC(arima_rmse, format="f", digits=0, big.mark=","),
+            arima_mape))
+cat(sprintf("%-10s  MAE=%s   RMSE=%s   MAPE=%.2f%%\n",
+            "LSTM",
+            formatC(lstm_mae,  format="f", digits=0, big.mark=","),
+            formatC(lstm_rmse, format="f", digits=0, big.mark=","),
+            lstm_mape))
+
+# ── Vẽ Actual vs Predicted (test set) ────────────────────────
+n_test_lstm <- length(lstm_pred)
+idx_test    <- (length(ts_vals) - n_test + 1):length(ts_vals)
+idx_lstm    <- tail(idx_test, n_test_lstm)
+
+retail_data_compare <- data.frame(
+  idx    = c(idx_test, idx_lstm, idx_lstm),
+  val    = c(ts_test, as.numeric(arima_pred), lstm_pred),
+  model  = c(rep("Thực tế",   n_test),
+             rep("ARIMA",     n_test),
+             rep("LSTM",      n_test_lstm))
+)
+
+p_compare <- ggplot(
+  retail_data_compare,
+  aes(
+    x = idx,
+    y = val,
+    color = model,
+    linetype = model
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c(
+      "Thực tế" = "#888780",
+      "ARIMA"   = "#378ADD",
+      "LSTM"    = "#1D9E75"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Thực tế" = "solid",
+      "ARIMA"   = "dashed",
+      "LSTM"    = "dotdash"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::comma_format(prefix = "£")
+  ) +
+  labs(
+    title = "ARIMA vs LSTM – Test Set",
+    x = "Week Index",
+    y = "Revenue (GBP)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom"
+  )
+
+p_compare
+
+ggsave(
+  filename = "../images/model_comparison.png",
+  plot = p_compare,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+# ── Vẽ dự báo 8 tuần tới ─────────────────────────────────────
+n_hist <- 12
+hist_idx <- tail(seq_along(ts_vals), n_hist)
+fc_idx   <- (length(ts_vals) + 1):(length(ts_vals) + 8)
+
+retail_data_fc <- data.frame(
+  idx   = c(hist_idx, fc_idx, fc_idx),
+  val   = c(tail(ts_vals, n_hist), as.numeric(arima_fc$mean), lstm_fc),
+  type  = c(rep("Lịch sử",   n_hist),
+            rep("ARIMA FC",  8),
+            rep("LSTM FC",   8))
+)
+
+# Khoảng tin cậy ARIMA
+retail_data_ci <- data.frame(
+  idx  = fc_idx,
+  lo   = as.numeric(arima_fc$lower[, 2]),
+  hi   = as.numeric(arima_fc$upper[, 2])
+)
+
+p_forecast <- ggplot() +
+
+  geom_ribbon(
+    data = retail_data_ci,
+    aes(
+      x = idx,
+      ymin = lo,
+      ymax = hi
+    ),
+    fill = "#378ADD",
+    alpha = 0.15
+  ) +
+
+  geom_line(
+    data = retail_data_fc,
+    aes(
+      x = idx,
+      y = val,
+      color = type,
+      linetype = type
+    ),
+    linewidth = 1
+  ) +
+
+  geom_point(
+    data = retail_data_fc,
+    aes(
+      x = idx,
+      y = val,
+      color = type
+    ),
+    size = 2.5
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "Lịch sử"  = "#888780",
+      "ARIMA FC" = "#378ADD",
+      "LSTM FC"  = "#1D9E75"
+    )
+  ) +
+
+  scale_linetype_manual(
+    values = c(
+      "Lịch sử"  = "solid",
+      "ARIMA FC" = "dashed",
+      "LSTM FC"  = "dotdash"
+    )
+  ) +
+
+  scale_y_continuous(
+    labels = scales::comma_format(prefix = "£")
+  ) +
+
+  labs(
+    title = "Revenue Forecast for Next 8 Weeks",
+    subtitle = "Blue area represents 95% confidence interval of ARIMA",
+    x = "Week Index",
+    y = "Revenue (GBP)"
+  ) +
+
+  theme_minimal(base_size = 12) +
+
+  theme(
+    legend.position = "bottom"
+  )
+
+p_forecast
+
+ggsave(
+  filename = "../images/forecast_8weeks.png",
+  plot = p_forecast,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+```
+BƯỚC 7: IN KẾT QUẢ DỰ BÁO
+```{r}
+last_date <- max(weekly_revenue$Week)
+fc_dates  <- last_date + weeks(1:8)
+
+cat("\n=== DỰ BÁO 8 TUẦN TỚI ===\n")
+cat(sprintf("%-15s  %12s  %12s  %12s  %12s\n",
+            "Tuần", "ARIMA", "CI Lo 95%", "CI Hi 95%", "LSTM"))
+cat(strrep("-", 70), "\n")
+for (i in 1:8) {
+  cat(sprintf("%-15s  %12s  %12s  %12s  %12s\n",
+              format(fc_dates[i], "%d/%m/%Y"),
+              paste0("£", formatC(arima_fc$mean[i],   format="f", digits=0, big.mark=",")),
+              paste0("£", formatC(arima_fc$lower[i,2],format="f", digits=0, big.mark=",")),
+              paste0("£", formatC(arima_fc$upper[i,2],format="f", digits=0, big.mark=",")),
+              paste0("£", formatC(lstm_fc[i],          format="f", digits=0, big.mark=","))))
+}
+
+cat("\n=== HOÀN THÀNH ===\n")
+```
+
+# Conclusion
+
+This project developed and evaluated ARIMA and LSTM models for e-commerce revenue forecasting.
+
+Key contributions:
+- End-to-end data cleaning and preprocessing pipeline.
+- Statistical validation using Augmented Dickey-Fuller (ADF) stationarity testing.
+- Comparison of traditional and deep learning forecasting methods.
+- Practical business-oriented revenue forecasts for future planning.
+
+Future improvements may include Prophet, XGBoost, external economic variables, holiday effects, and deployment through a Shiny dashboard.
